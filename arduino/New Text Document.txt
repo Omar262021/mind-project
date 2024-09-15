@@ -1,0 +1,285 @@
+//keypad library
+#include <Keypad.h>
+
+//servo library
+#include <Servo.h>
+Servo myservo;
+
+//Temperature Sensor 
+#define TMP A0
+
+//Light Sensor 
+#define LDR A2
+
+//PIR Sensor 
+#define PIR 13
+
+//Leds
+#define red_led A3
+#define blue_led A4
+#define green_led A5
+
+//buzzer
+# define Buzzer A1
+
+//servo motor
+# define servo_motor 2
+
+//motor
+# define motor_input2 9
+# define motor_input1 10
+# define motor_enable 11
+
+//variables
+float Temperature;
+float Light;
+int anyone;
+
+//timer to use millis
+unsigned long t_buzzer=0;
+bool buzzerOn = false;
+
+unsigned long t_servo=0;
+bool servoOn = false;
+
+bool message = false;
+
+unsigned long t1=millis();
+unsigned long t2=millis();
+unsigned long t3=millis();
+
+//keypad
+const byte ROWS = 4; 
+const byte COLS = 3; 
+
+char hexaKeys[ROWS][COLS] = {
+  {'1', '2', '3'},
+  {'4', '5', '6'},
+  {'7', '8', '9'},
+  {'*', '0', '#'}
+};
+
+byte rowPins[ROWS] = {3, 4, 5, 6}; //connect to the row pinouts of the keypad
+byte colPins[COLS] = {7, 8, 9}; //connect to the column pinouts of the keypad
+
+Keypad customKeypad = Keypad(makeKeymap(hexaKeys), rowPins, colPins, ROWS, COLS); 
+
+String user_password[4]; 
+String pass[4] = {"2", "0", "2", "4"}; 
+int i = 0;
+int count = 0;
+
+
+void setup(){
+
+  Serial.begin(9600);
+  
+  myservo.attach(servo_motor);
+  myservo.write(90);
+  
+  pinMode(motor_input1, OUTPUT);
+  pinMode(motor_input2, OUTPUT);
+  pinMode(motor_enable, OUTPUT);
+ 
+  
+  pinMode(LDR, INPUT);
+  pinMode(TMP, INPUT);
+  pinMode(PIR, INPUT);
+  
+  pinMode(Buzzer, OUTPUT);
+  
+  pinMode(red_led, OUTPUT);
+  pinMode(blue_led, OUTPUT);
+  pinMode(green_led, OUTPUT);
+
+  Serial.println("Enter the password"); 
+}
+
+void loop()
+{
+   
+char customKey = customKeypad.getKey();
+  
+//to save the password entered
+if (customKey) {
+    if(customKey != '*'){
+    user_password[i] = String(customKey);
+    i++;
+    Serial.print(customKey);
+  }
+//to enter a new password press "*"
+else if(customKey == '*'){ 
+      //close the system
+       close_RGB_led();
+       analogWrite(motor_enable, 0);
+       myservo.write(90);
+      
+       Serial.println("");
+       Serial.println("Enter the password");
+        i=0;   
+        buzzerOn = false;
+        servoOn=false;
+        message=false;
+        return; //to reset the void loop
+    }
+  }  
+ 
+//check the password is true or false
+if(i == 4) { 
+    count = 0;
+    for(int j = 0; j < 4; j++){ 
+      if(user_password[j] == pass[j]){
+        count++;
+      }
+    }
+    
+    if(count == 4){ //the password is true
+
+//the door opens for 5sec
+       open_door();
+   
+//Temperature Sensor 
+       Temperature = TMP_sensor();   
+  
+//lighting system
+     //  light_system();
+       RGB_led(Temperature);
+    
+//fan
+       motor(Temperature); 
+  
+//Light Sensor 
+       LDR_sensor();
+      
+//detect if there is anyone inside the home 
+       PIR_sensor();
+         
+    }
+     else{  //the password is false
+//warning
+       buzzer();
+       if(!message){
+      Serial.println("");
+     Serial.println("The password is wrong");
+     message=true;
+     }
+  }
+}
+  
+}//End void loop
+
+//Light
+void RGB_led(float temp)
+{
+  if (temp > 30) {    // the temperature high
+    digitalWrite(red_led, HIGH);
+    digitalWrite(blue_led, LOW);
+    digitalWrite(green_led, LOW);
+  } 
+  else if (temp < 20) {   // the temperature low
+    digitalWrite(red_led, LOW);
+    digitalWrite(blue_led, HIGH);
+    digitalWrite(green_led, LOW);
+  } 
+  else {               // the temperature medium
+    digitalWrite(red_led, LOW);
+    digitalWrite(blue_led, LOW);
+    digitalWrite(green_led, HIGH);
+  }
+}
+
+void close_RGB_led()
+{
+    digitalWrite(red_led, LOW);
+    digitalWrite(blue_led, LOW);
+    digitalWrite(green_led, LOW);
+}
+
+//Temperature Sensor 
+float TMP_sensor(){
+ 
+  float Temp = analogRead(TMP)  * (5.0 / 1023.0);
+  Temp = (Temp-.08) * 100.0;
+  if(millis()-t1>=500){
+    Serial.println("");
+    Serial.print("temp=");
+    Serial.println(Temp);
+    t1=millis();
+  }
+  return Temp;
+}
+
+//PIR Sensor 
+void PIR_sensor(){
+   anyone=digitalRead(PIR);
+  
+  if(millis()-t2>=500){
+    if(anyone==LOW){
+     Serial.println("the home is empty");
+     t2=millis();
+    }
+     else{
+     Serial.println("Someone is inside the home ");
+     t2=millis();
+ }
+  }
+}
+//Light Sensor
+void LDR_sensor(){
+   Light =analogRead(LDR);
+    
+  if(millis()-t3>=500){
+   Serial.print("Light=");
+   Serial.println(Light);
+   t3=millis();
+
+  }
+}
+
+//servo motor
+void open_door(){
+ 
+  if(!servoOn){
+    myservo.write(180);
+    servoOn=true;
+    t_servo=millis();
+    delay(5000);
+    myservo.write(0);
+
+    delay(5000);
+    myservo.write(90);
+  }
+}
+
+//motor
+void motor(float temp){
+  int speed = 0;
+  
+  if (temp < 20) {
+    speed = 0;
+ } 
+  else if (temp >= 20 && temp <= 40) {
+    speed = map(temp, 20, 40, 100, 255);  
+  }
+  else {
+    speed = 255;  
+  }
+  
+  analogWrite(motor_enable, speed);
+  digitalWrite(motor_input1, LOW);
+  digitalWrite(motor_input2, HIGH);
+}
+
+// Buzzer 
+void buzzer() {
+  
+  if (!buzzerOn) { 
+    tone(Buzzer, 10000);  
+    buzzerOn = true;   
+    t_buzzer = millis();      
+     
+  }
+  if (buzzerOn && millis() - t_buzzer >= 2000) {
+    noTone(Buzzer);  
+  }
+}
